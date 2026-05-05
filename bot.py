@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# --- BAZA ---
+# --- BAZA BILAN ISHLASH ---
 def init_db():
     conn = sqlite3.connect('work_time.db')
     cursor = conn.cursor()
@@ -24,11 +24,11 @@ def init_db():
 init_db()
 user_data = {}
 
-# --- DINAMIK MENYU (MUHIM QISM) ---
+# --- AQLLI MENYU (Dinamik tugmalar) ---
 def get_menu(status="idle"):
     builder = ReplyKeyboardBuilder()
     
-    # Ish holatiga qarab o'zgaradigan tugmalar
+    # Ish holatiga qarab tugmalar o'zgaradi
     if status == "working":
         builder.button(text="⏸ Tanaffus")
         builder.button(text="🛑 Ishni tugatish")
@@ -38,11 +38,11 @@ def get_menu(status="idle"):
     else:
         builder.button(text="🚀 Ishni boshlash")
     
-    # Har doim turadigan statistika tugmalari
+    # Har doim ko'rinadigan statistika tugmalari
     builder.button(text="📊 Bugun")
     builder.button(text="📅 Shu hafta")
     
-    builder.adjust(2)
+    builder.adjust(2) # Tugmalarni 2 qatordan chiqaradi
     return builder.as_markup(resize_keyboard=True)
 
 # --- HANDLERLAR ---
@@ -60,8 +60,8 @@ async def start_work(message: types.Message):
         'total_seconds': 0,
         'session_start': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    # BU YERDA get_menu("working") deb yozish shart!
-    await message.answer("Ish boshlandi!", reply_markup=get_menu("working"))
+    # Bu yerda javob berayotganda yangi menyuni (working) yuboramiz
+    await message.answer("Ish boshlandi! Omad!", reply_markup=get_menu("working"))
 
 @dp.message(lambda message: message.text == "⏸ Tanaffus")
 async def pause_work(message: types.Message):
@@ -70,7 +70,7 @@ async def pause_work(message: types.Message):
         diff = datetime.now() - user_data[user_id]['start_time']
         user_data[user_id]['total_seconds'] += int(diff.total_seconds())
         user_data[user_id]['status'] = 'paused'
-        await message.answer("Tanaffus...", reply_markup=get_menu("paused"))
+        await message.answer("Tanaffus boshlandi...", reply_markup=get_menu("paused"))
 
 @dp.message(lambda message: message.text == "▶️ Davom ettirish")
 async def resume_work(message: types.Message):
@@ -89,6 +89,7 @@ async def stop_work(message: types.Message):
         if data['status'] == 'working':
             total += int((datetime.now() - data['start_time']).total_seconds())
         
+        # Ma'lumotni bazaga yozish
         conn = sqlite3.connect('work_time.db')
         cursor = conn.cursor()
         cursor.execute('INSERT INTO work_logs VALUES (?, ?, ?, ?)', 
@@ -99,7 +100,9 @@ async def stop_work(message: types.Message):
         h, r = divmod(total, 3600)
         m, _ = divmod(r, 60)
         del user_data[user_id]
-        await message.answer(f"Ish tugadi! ✅\nSof vaqt: {h}s, {m}d.", reply_markup=get_menu("idle"))
+        await message.answer(f"Ish tugadi! ✅\nSof ish vaqti: {h} soat, {m} daqiqa.", reply_markup=get_menu("idle"))
+    else:
+        await message.answer("Siz hali ish boshlamagansiz.", reply_markup=get_menu("idle"))
 
 @dp.message(lambda message: message.text == "📊 Bugun")
 async def stats_today(message: types.Message):
@@ -110,9 +113,10 @@ async def stats_today(message: types.Message):
     cursor.execute('SELECT SUM(duration) FROM work_logs WHERE user_id=? AND start_time LIKE ?', (user_id, f"{today}%"))
     res = cursor.fetchone()[0] or 0
     conn.close()
+    
     h, r = divmod(res, 3600)
     m, _ = divmod(r, 60)
-    await message.answer(f"📊 Bugun jami: {h} soat, {m} daqiqa.")
+    await message.answer(f"📊 Bugun jami: {h} soat, {m} daqiqa ishladingiz.")
 
 async def main():
     await dp.start_polling(bot)
