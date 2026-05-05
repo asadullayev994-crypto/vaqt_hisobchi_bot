@@ -1,18 +1,18 @@
 import asyncio
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
-# --- BOT SOZLAMALARI ---
-API_TOKEN = '8675658310:AAGeTvAgVKoxIKfxVAXmgOzv8yhPzhKmuAk' # O'z tokeningizni qo'ying
+# --- SOZLAMALAR ---
+API_TOKEN = '8675658310:AAGeTvAgVKoxIKfxVAXmgOzv8yhPzhKmuAk' 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# --- BAZA BILAN ISHLASH ---
+# --- BAZA ---
 def init_db():
     conn = sqlite3.connect('work_time.db')
     cursor = conn.cursor()
@@ -22,14 +22,13 @@ def init_db():
     conn.close()
 
 init_db()
-
-# Foydalanuvchi holatini saqlash
 user_data = {}
 
-# --- AQLLI MENYU ---
-def main_menu(status="idle"):
+# --- DINAMIK MENYU (MUHIM QISM) ---
+def get_menu(status="idle"):
     builder = ReplyKeyboardBuilder()
     
+    # Ish holatiga qarab o'zgaradigan tugmalar
     if status == "working":
         builder.button(text="⏸ Tanaffus")
         builder.button(text="🛑 Ishni tugatish")
@@ -39,8 +38,10 @@ def main_menu(status="idle"):
     else:
         builder.button(text="🚀 Ishni boshlash")
     
+    # Har doim turadigan statistika tugmalari
     builder.button(text="📊 Bugun")
     builder.button(text="📅 Shu hafta")
+    
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
@@ -48,8 +49,7 @@ def main_menu(status="idle"):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("Salom! Ish vaqtingizni hisoblovchi botga xush kelibsiz.", 
-                         reply_markup=main_menu())
+    await message.answer("Vaqt hisobchi botga xush kelibsiz!", reply_markup=get_menu("idle"))
 
 @dp.message(lambda message: message.text == "🚀 Ishni boshlash")
 async def start_work(message: types.Message):
@@ -60,7 +60,8 @@ async def start_work(message: types.Message):
         'total_seconds': 0,
         'session_start': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    await message.answer("Ish boshlandi! Omad!", reply_markup=main_menu("working"))
+    # BU YERDA get_menu("working") deb yozish shart!
+    await message.answer("Ish boshlandi!", reply_markup=get_menu("working"))
 
 @dp.message(lambda message: message.text == "⏸ Tanaffus")
 async def pause_work(message: types.Message):
@@ -69,7 +70,7 @@ async def pause_work(message: types.Message):
         diff = datetime.now() - user_data[user_id]['start_time']
         user_data[user_id]['total_seconds'] += int(diff.total_seconds())
         user_data[user_id]['status'] = 'paused'
-        await message.answer("Tanaffusda...", reply_markup=main_menu("paused"))
+        await message.answer("Tanaffus...", reply_markup=get_menu("paused"))
 
 @dp.message(lambda message: message.text == "▶️ Davom ettirish")
 async def resume_work(message: types.Message):
@@ -77,7 +78,7 @@ async def resume_work(message: types.Message):
     if user_id in user_data and user_data[user_id]['status'] == 'paused':
         user_data[user_id]['status'] = 'working'
         user_data[user_id]['start_time'] = datetime.now()
-        await message.answer("Ish davom etmoqda...", reply_markup=main_menu("working"))
+        await message.answer("Ish davom etmoqda...", reply_markup=get_menu("working"))
 
 @dp.message(lambda message: message.text == "🛑 Ishni tugatish")
 async def stop_work(message: types.Message):
@@ -88,7 +89,6 @@ async def stop_work(message: types.Message):
         if data['status'] == 'working':
             total += int((datetime.now() - data['start_time']).total_seconds())
         
-        # Bazaga saqlash
         conn = sqlite3.connect('work_time.db')
         cursor = conn.cursor()
         cursor.execute('INSERT INTO work_logs VALUES (?, ?, ?, ?)', 
@@ -99,7 +99,7 @@ async def stop_work(message: types.Message):
         h, r = divmod(total, 3600)
         m, _ = divmod(r, 60)
         del user_data[user_id]
-        await message.answer(f"Ish tugadi! ✅\nSof ish vaqti: {h}s, {m}d.", reply_markup=main_menu("idle"))
+        await message.answer(f"Ish tugadi! ✅\nSof vaqt: {h}s, {m}d.", reply_markup=get_menu("idle"))
 
 @dp.message(lambda message: message.text == "📊 Bugun")
 async def stats_today(message: types.Message):
@@ -112,7 +112,7 @@ async def stats_today(message: types.Message):
     conn.close()
     h, r = divmod(res, 3600)
     m, _ = divmod(r, 60)
-    await message.answer(f"📊 Bugun jami: {h} soat, {m} daqiqa ishladingiz.")
+    await message.answer(f"📊 Bugun jami: {h} soat, {m} daqiqa.")
 
 async def main():
     await dp.start_polling(bot)
