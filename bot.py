@@ -1,55 +1,53 @@
-import time
+import asyncio
+import logging
 from datetime import datetime
-from aiogram import Bot, Dispatcher, types, executor
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 # Bot tokeningizni kiriting
 API_TOKEN = '8675658310:AAGeTvAgVKoxIKfxVAXmgOzv8yhPzhKmuAk'
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+logging.basicConfig(level=logging.INFO)
 
-# Foydalanuvchilarning ish boshlash vaqtini saqlash uchun lug'at
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+
 user_sessions = {}
 
 # Tugmalar
-buttons = ReplyKeyboardMarkup(resize_keyboard=True)
-buttons.add(KeyboardButton("🚀 Ishni boshlash"), KeyboardButton("🛑 Ishni tugatish"))
+def main_menu():
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="🚀 Ishni boshlash")
+    builder.button(text="🛑 Ishni tugatish")
+    return builder.as_markup(resize_keyboard=True)
 
-@dp.message_handler(commands=['start'])
-async def send_welcome(message: types.Message):
-    await message.reply("Salom! Ish vaqtingizni hisoblashga tayyorman.", reply_markup=buttons)
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    await message.answer("Salom! Ish vaqtingizni hisoblashga tayyorman.", reply_markup=main_menu())
 
-@dp.message_handler(lambda message: message.text == "🚀 Ishni boshlash")
+@dp.message(lambda message: message.text == "🚀 Ishni boshlash")
 async def start_work(message: types.Message):
     user_id = message.from_user.id
     user_sessions[user_id] = datetime.now()
-    
     start_time = user_sessions[user_id].strftime("%H:%M:%S")
-    await message.answer(f"Ish boshlandi! 🕒 Soat: {start_time}\nCharchamang!")
+    await message.answer(f"Ish boshlandi! 🕒 Soat: {start_time}\nBaraka bersin!")
 
-@dp.message_handler(lambda message: message.text == "🛑 Ishni tugatish")
+@dp.message(lambda message: message.text == "🛑 Ishni tugatish")
 async def stop_work(message: types.Message):
     user_id = message.from_user.id
-    
     if user_id in user_sessions:
         start_time = user_sessions[user_id]
-        end_time = datetime.now()
-        
-        # Vaqt farqini hisoblash
-        duration = end_time - start_time
+        duration = datetime.now() - start_time
         hours, remainder = divmod(duration.seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        
-        # Sessiyani o'chirish
         del user_sessions[user_id]
-        
-        response = (f"Ish yakunlandi! ✅\n\n"
-                    f"⏱ Sarflangan vaqt: {hours} soat, {minutes} daqiqa\n"
-                    f"Yaxshi dam oling!")
-        await message.answer(response)
+        await message.answer(f"Ish yakunlandi! ✅\n⏱ Sarflangan vaqt: {hours} soat, {minutes} daqiqa.")
     else:
-        await message.answer("Siz hali ishni boshlamagansiz. Avval 'Ishni boshlash'ni bosing.")
+        await message.answer("Siz hali ishni boshlamagansiz.")
+
+async def main():
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
