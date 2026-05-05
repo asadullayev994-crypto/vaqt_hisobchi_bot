@@ -1,52 +1,35 @@
-import asyncio ,sqlite3
+import asyncio
 import logging
-from datetime import datetime
+import sqlite3
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
+# --- BOT SOZLAMALARI ---
+API_TOKEN = '8675658310:AAGeTvAgVKoxIKfxVAXmgOzv8yhPzhKmuAk' # O'z tokeningizni qo'ying
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
 
-
-def add_log(user_id, start, end, duration):
-    conn = sqlite3.connect('work_time.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO work_logs (user_id, start_time, end_time, duration) VALUES (?, ?, ?, ?)',
-                   (user_id, start, end, duration))
-    conn.commit()
-    conn.close()
-
-
-# Bazaga ulanish va jadval yaratish
+# --- BAZA BILAN ISHLASH ---
 def init_db():
     conn = sqlite3.connect('work_time.db')
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS work_logs (
-            user_id INTEGER,
-            start_time TEXT,
-            end_time TEXT,
-            duration INTEGER
-        )
-    ''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS work_logs 
+                      (user_id INTEGER, start_time TEXT, end_time TEXT, duration INTEGER)''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# Bot tokeningizni kiriting
-API_TOKEN = '8675658310:AAGeTvAgVKoxIKfxVAXmgOzv8yhPzhKmuAk'
+# Foydalanuvchi holatini saqlash
+user_data = {}
 
-logging.basicConfig(level=logging.INFO)
-
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
-
-user_sessions = {}
-
+# --- AQLLI MENYU ---
 def main_menu(status="idle"):
     builder = ReplyKeyboardBuilder()
     
-    # Holatga qarab o'zgaruvchi tugmalar
     if status == "working":
         builder.button(text="⏸ Tanaffus")
         builder.button(text="🛑 Ishni tugatish")
@@ -56,47 +39,80 @@ def main_menu(status="idle"):
     else:
         builder.button(text="🚀 Ishni boshlash")
     
-    # Doimiy statistik tugmalar (bular har doim turadi)
     builder.button(text="📊 Bugun")
     builder.button(text="📅 Shu hafta")
-    
-    # Tugmalarni chiroyli tartibga solish
-    builder.adjust(2) 
+    builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
+# --- HANDLERLAR ---
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("Salom! Ish vaqtingizni hisoblashga tayyorman.", reply_markup=main_menu())
+    await message.answer("Salom! Ish vaqtingizni hisoblovchi botga xush kelibsiz.", 
+                         reply_markup=main_menu())
 
 @dp.message(lambda message: message.text == "🚀 Ishni boshlash")
 async def start_work(message: types.Message):
     user_id = message.from_user.id
-    user_sessions[user_id] = datetime.now()
-    start_time = user_sessions[user_id].strftime("%H:%M:%S")
-    await message.answer(f"Ish boshlandi! 🕒 Soat: {start_time}\nBaraka bersin!")
+    user_data[user_id] = {
+        'status': 'working',
+        'start_time': datetime.now(),
+        'total_seconds': 0,
+        'session_start': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    await message.answer("Ish boshlandi! Omad!", reply_markup=main_menu("working"))
+
+@dp.message(lambda message: message.text == "⏸ Tanaffus")
+async def pause_work(message: types.Message):
+    user_id = message.from_user.id
+    if user_id in user_data and user_data[user_id]['status'] == 'working':
+        diff = datetime.now() - user_data[user_id]['start_time']
+        user_data[user_id]['total_seconds'] += int(diff.total_seconds())
+        user_data[user_id]['status'] = 'paused'
+        await message.answer("Tanaffusda...", reply_markup=main_menu("paused"))
+
+@dp.message(lambda message: message.text == "▶️ Davom ettirish")
+async def resume_work(message: types.Message):
+    user_id = message.from_user.id
+    if user_id in user_data and user_data[user_id]['status'] == 'paused':
+        user_data[user_id]['status'] = 'working'
+        user_data[user_id]['start_time'] = datetime.now()
+        await message.answer("Ish davom etmoqda...", reply_markup=main_menu("working"))
+
 @dp.message(lambda message: message.text == "🛑 Ishni tugatish")
 async def stop_work(message: types.Message):
     user_id = message.from_user.id
-    if user_id in user_sessions:
-        start_dt = user_sessions[user_id]
-        end_dt = datetime.now()
-        duration_seconds = int((end_dt - start_dt).total_seconds())
-        
-        # Vaqtlarni matn ko'rinishiga keltiramiz
-        start_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
-        end_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+    if user_id in user_data:
+        data = user_data[user_id]
+        total = data['total_seconds']
+        if data['status'] == 'working':
+            total += int((datetime.now() - data['start_time']).total_seconds())
         
         # Bazaga saqlash
-        add_log(user_id, start_str, end_str, duration_seconds)
+        conn = sqlite3.connect('work_time.db')
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO work_logs VALUES (?, ?, ?, ?)', 
+                       (user_id, data['session_start'], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), total))
+        conn.commit()
+        conn.close()
         
-        hours, remainder = divmod(duration_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        
-        del user_sessions[user_id]
-        await message.answer(f"Ish yakunlandi va bazaga saqlandi! ✅\n⏱ Vaqt: {hours}s, {minutes}d.")
-    else:
-        await message.answer("Siz hali ishni boshlamagansiz.")
+        h, r = divmod(total, 3600)
+        m, _ = divmod(r, 60)
+        del user_data[user_id]
+        await message.answer(f"Ish tugadi! ✅\nSof ish vaqti: {h}s, {m}d.", reply_markup=main_menu("idle"))
+
+@dp.message(lambda message: message.text == "📊 Bugun")
+async def stats_today(message: types.Message):
+    user_id = message.from_user.id
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = sqlite3.connect('work_time.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT SUM(duration) FROM work_logs WHERE user_id=? AND start_time LIKE ?', (user_id, f"{today}%"))
+    res = cursor.fetchone()[0] or 0
+    conn.close()
+    h, r = divmod(res, 3600)
+    m, _ = divmod(r, 60)
+    await message.answer(f"📊 Bugun jami: {h} soat, {m} daqiqa ishladingiz.")
 
 async def main():
     await dp.start_polling(bot)
