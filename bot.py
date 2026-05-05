@@ -43,12 +43,27 @@ dp = Dispatcher()
 
 user_sessions = {}
 
-# Tugmalar
-def main_menu():
+def main_menu(status="idle"):
     builder = ReplyKeyboardBuilder()
-    builder.button(text="🚀 Ishni boshlash")
-    builder.button(text="🛑 Ishni tugatish")
+    
+    # Holatga qarab o'zgaruvchi tugmalar
+    if status == "working":
+        builder.button(text="⏸ Tanaffus")
+        builder.button(text="🛑 Ishni tugatish")
+    elif status == "paused":
+        builder.button(text="▶️ Davom ettirish")
+        builder.button(text="🛑 Ishni tugatish")
+    else:
+        builder.button(text="🚀 Ishni boshlash")
+    
+    # Doimiy statistik tugmalar (bular har doim turadi)
+    builder.button(text="📊 Bugun")
+    builder.button(text="📅 Shu hafta")
+    
+    # Tugmalarni chiroyli tartibga solish
+    builder.adjust(2) 
     return builder.as_markup(resize_keyboard=True)
+
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
